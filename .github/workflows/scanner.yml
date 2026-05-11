@@ -1,0 +1,79 @@
+name: 小幣起飛監控器 - 定時掃描
+
+on:
+  # 每 30 分鐘自動觸發一次（節省 GitHub 免費額度）
+  schedule:
+    - cron: "0,30 * * * *"
+
+  # 允許手動從介面觸發
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '執行模式'
+        required: true
+        default: 'scan'
+        type: choice
+        options:
+          - scan    # 正式掃描
+          - test    # 測試 Telegram
+          - dry     # 模擬掃描
+
+jobs:
+  altcoin-scan:
+    name: 執行幣種掃描
+    runs-on: ubuntu-latest
+    timeout-minutes: 5   # 掃描通常 1-2 分鐘結束，設 5 分鐘保護額度
+
+    steps:
+      - name: ⬇️ Checkout 程式碼
+        uses: actions/checkout@v4
+
+      - name: 🐍 設定 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 📦 安裝 Python 套件
+        run: pip install -r requirements.txt
+
+      - name: 🔍 執行掃描 (注入黑馬爆量參數)
+        env:
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # === 我們的專屬策略參數 ===
+          MIN_MARKET_CAP: "30000000"
+          MAX_MARKET_CAP: "120000000"
+          MIN_PRICE_CHANGE_24H: "5"
+          MAX_PRICE_CHANGE_24H: "30"
+          VOL_SPIKE_THRESHOLD: "3.0"
+          MIN_RVOL: "3"
+          MIN_ORDERBOOK_LIQUIDITY: "50000"
+          MIN_TOP_TRADER_LS_RATIO: "1.1"
+          MAX_FUNDING_RATE: "0.0005"
+          MAX_BTC_DAILY_DROP: "-3"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.mode }}"
+          else
+            MODE="scan"
+          fi
+
+          echo "執行模式: $MODE"
+
+          # 💡 注意這裡！我們加上 --once 參數，叫程式掃完立刻退出，不要 sleep
+          case "$MODE" in
+            test) python main.py --test ;;
+            dry)  python main.py --dry --once ;;
+            *)    python main.py --once ;;
+          esac
+
+      - name: 📋 上傳執行日誌（僅在失敗時）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-log-${{ github.run_id }}
+          retention-days: 3
