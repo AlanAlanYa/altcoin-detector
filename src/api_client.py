@@ -42,8 +42,7 @@ def _safe_request(method: str, url: str, params: Optional[Dict] = None, headers:
     return None
 
 class BinanceClient:
-    SPOT_BASE = "https://api.binance.com"
-    FUTURES_BASE = "https://fapi.binance.com"
+    SPOT_BASE = "https://api.mexc.com"  
 
     # --- 現貨方法 ---
     def get_klines(self, symbol: str, interval: str, limit: int = 200):
