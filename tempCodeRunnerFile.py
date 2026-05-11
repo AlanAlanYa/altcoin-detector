@@ -1,0 +1,1 @@
+掃描間隔: {config.SCAN_INTERVAL_SEC // 60} 分鐘
