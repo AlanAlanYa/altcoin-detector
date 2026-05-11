@@ -35,7 +35,7 @@ class Config:
     # ========================
     # PHASE 1（黑馬篩選）
     # ========================
-    MIN_MARKET_CAP: float = float(os.getenv("MIN_MARKET_CAP", 30_000_000))
+    MIN_MARKET_CAP: float = float(os.getenv("MIN_MARKET_CAP", 15_000_000))
     MAX_MARKET_CAP: float = float(os.getenv("MAX_MARKET_CAP", 120_000_000))
 
     MIN_PRICE_CHANGE_24H: float = float(os.getenv("MIN_PRICE_CHANGE_24H", 5.0))

@@ -72,7 +72,7 @@ def check_btc_market_health() -> Tuple[bool, str]:
 def phase1_basic_filter() -> List[Dict[str, Any]]:
     all_coins = []
     # 抓取市值排行落在中小型區間的候選名單
-    for page in range(4, 11):
+    for page in range(2, 5):
         coins = coingecko.get_coins_markets(per_page=250, page=page)
         if coins:
             all_coins.extend(coins)
