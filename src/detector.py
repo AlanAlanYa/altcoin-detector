@@ -88,7 +88,7 @@ def phase1_basic_filter() -> List[Dict]:
     
     # 1. 抓取 CoinGecko 市場資料 (跳過第一頁，抓取第 2, 3, 4 頁)
     all_coins = []
-    for page in [2, 3, 4]:
+    for page in range(4, 11):
         logger.info(f"正在從 CoinGecko 抓取第 {page} 頁資料...")
         coins = coingecko.get_coins_markets(per_page=250, page=page)
         
