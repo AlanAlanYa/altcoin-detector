@@ -72,36 +72,46 @@ def check_btc_market_health() -> Tuple[bool, str]:
 def phase1_basic_filter() -> List[Dict[str, Any]]:
     all_coins = []
     # 抓取市值排行落在中小型區間的候選名單
-    for page in range(2, 5):
+    for page in range(1, 5):
         coins = coingecko.get_coins_markets(per_page=250, page=page)
         if coins:
             all_coins.extend(coins)
         time.sleep(config.REQUEST_DELAY_SEC)
+    logger.info(f"CoinGecko 共抓到 {len(all_coins)} 個幣種") 
+    logger.debug(f"CoinGecko symbol 範例：{[c['symbol'] for c in all_coins[:10]]}")
 
     exchange_info = binance.get_exchange_info()
     if not exchange_info:
         logger.warning("無法取得交易所資訊，跳過 Phase 1 篩選")
         return []
 
-    symbols = {s['symbol'] for s in exchange_info['symbols'] if s['status'] == 'TRADING'}
+    logger.debug(f"MEXC exchangeInfo keys：{list(exchange_info.keys())}")
+    logger.debug(f"MEXC exchangeInfo 內容前100字：{str(exchange_info)[:200]}")
+    symbols = {s['symbol'] for s in exchange_info['symbols'] if s['status'] == '1'}
+    logger.debug(f"MEXC symbol 範例：{list(symbols)[:10]}")
     candidates = []
 
     for coin in all_coins:
         symbol = coin['symbol'].upper() + "USDT"
 
         if symbol not in symbols:
+            logger.debug(f"⛔ {symbol} MEXC 未上架")
             continue
 
         mcap = coin.get('market_cap', 0)
         change = coin.get('price_change_percentage_24h', 0) or 0
 
         if not (config.MIN_MARKET_CAP <= mcap <= config.MAX_MARKET_CAP):
+            logger.debug(f"⛔ {symbol} 市值不符：{mcap/1e6:.1f}M")
             continue
 
         if not (config.MIN_PRICE_CHANGE_24H <= change <= config.MAX_PRICE_CHANGE_24H):
+            logger.debug(f"⛔ {symbol} 漲幅不符：{change:.1f}%")
             continue
-
+        logger.info(f"🔎 {symbol} 進入爆量檢測 | 市值={mcap/1e6:.1f}M | 漲幅={change:.1f}%")
+        
         if not _volume_spike(symbol):
+            logger.info(f"❌ {symbol} 爆量不足，跳過")
             continue
 
         # 補齊後續階段需要的標準欄位
@@ -115,9 +125,9 @@ def phase1_basic_filter() -> List[Dict[str, Any]]:
         coin["orderbook_liquidity_usd"] = 0  # 預留欄位
 
         candidates.append(coin)
-
+        
+    logger.info(f"✅ Phase1 通過 {len(candidates)} 個幣種：{[c['binance_symbol'] for c in candidates]}")
     return candidates
-
 
 # =====================================================
 # PHASE 2（合約聰明錢深度分析與計分）
@@ -139,17 +149,20 @@ def phase2_smart_money_filter(candidates: List[Dict[str, Any]], client) -> List[
             score += 30
             notes.append("CVD 上升")
         else:
-            # 沒通過核心動能檢測直接剃除
+            logger.info(f"❌ {symbol} 淘汰：CVD={cvd_trend}")
             continue
 
         # 2. Open Interest 趨勢檢測
         oi_trend = _cg_oi_trend(client, symbol)
         if oi_trend == "減少":
+            logger.info(f"❌ {symbol} 淘汰：OI 減少")
             continue
         elif oi_trend == "增加":
             score += 30
             notes.append("OI 增加")
-
+        elif oi_trend == "穩定":
+            score += 10
+            
         # 3. 資金費率 (Funding Rate) 提取與過濾
         funding_data = client.get_funding_rate(symbol)
         funding_rate = 0.0
@@ -158,11 +171,13 @@ def phase2_smart_money_filter(candidates: List[Dict[str, Any]], client) -> List[
             funding_rate = funding_data[0].get("fundingRate", 0.0)
             # 費率過高代表多頭過度擁擠，容易被狙擊
             if funding_rate >= config.MAX_FUNDING_RATE:
+                logger.info(f"❌ {symbol} 淘汰：資金費率過熱={funding_rate:.4f}")
                 continue
             score += 20
             notes.append("費率健康")
         else:
-            continue
+            funding_rate = 0.0
+            notes.append("⚠️ 無資金費率數據（預設中性）")
 
         # 4. 大戶多空比 (L/S Ratio) 提取與加分
         ls_data = client.get_top_trader_ls_ratio(symbol)
@@ -175,7 +190,8 @@ def phase2_smart_money_filter(candidates: List[Dict[str, Any]], client) -> List[
                 notes.append("大戶偏多")
 
         # 總分達標則生成正式訊號
-        if score >= 60:
+        logger.info(f"📊 {symbol} 計分：{score}分 | CVD={cvd_trend} | OI={oi_trend} | 費率={funding_rate:.4f} | LS={ls_ratio}")
+        if score >= 40:
             signals.append(
                 CoinSignal(
                     symbol=symbol,
@@ -204,16 +220,37 @@ def phase2_smart_money_filter(candidates: List[Dict[str, Any]], client) -> List[
 # COINGLASS HELPERS
 # =====================================================
 def _cg_cvd_trend(client, symbol: str) -> str:
+    # 先試 CoinGlass
     data = client.get_cvd(symbol)
-    if not data or len(data) < 2:
-        return "橫盤"
+    if data and len(data) >= 2:
+        try:
+            prev_cvd = float(data[-2].get("cvd", 0))
+            curr_cvd = float(data[-1].get("cvd", 0))
+            return "上升" if curr_cvd > prev_cvd else "下降"
+        except (ValueError, TypeError, KeyError):
+            pass
 
+    # CoinGlass 無數據，fallback 用 MEXC 現貨成交紀錄自算
     try:
-        prev_cvd = float(data[-2].get("cvd", 0))
-        curr_cvd = float(data[-1].get("cvd", 0))
-        return "上升" if curr_cvd > prev_cvd else "下降"
-    except (ValueError, TypeError, KeyError):
-        return "橫盤"
+        trades = binance.get_recent_trades(symbol, limit=500)
+        if not trades or len(trades) < 50:
+            return "橫盤"
+        cumulative = 0.0
+        segments = []
+        size = len(trades) // 5
+        for i, t in enumerate(trades):
+            val = float(t["price"]) * float(t["qty"])
+            cumulative += val if not t["isBuyerMaker"] else -val
+            if (i + 1) % size == 0:
+                segments.append(cumulative)
+        if len(segments) < 2:
+            return "橫盤"
+        first = sum(segments[:len(segments)//2]) / (len(segments)//2)
+        second = sum(segments[len(segments)//2:]) / (len(segments) - len(segments)//2)
+        delta = (second - first) / (abs(first) + 1)
+        return "上升" if delta > 0.05 else ("下降" if delta < -0.05 else "橫盤")
+    except Exception:
+        return "橫盤"   
 
 
 def _cg_oi_trend(client, symbol: str) -> str:
@@ -235,11 +272,11 @@ def _cg_oi_trend(client, symbol: str) -> str:
 # =====================================================
 def _volume_spike(symbol: str) -> bool:
     try:
-        klines = binance.get_klines(symbol, "15m", limit=5)
-        if not klines or len(klines) < 5:
+        klines = binance.get_klines(symbol, "15m", limit=6)
+        if not klines or len(klines) < 6:
             return False
 
-        vols = [float(k[5]) for k in klines]
+        vols = [float(k[5]) for k in klines[:-1]]
         avg_vol = sum(vols[:-1]) / 4.0
         
         if avg_vol == 0:

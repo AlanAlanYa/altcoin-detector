@@ -64,18 +64,13 @@ def format_signal_message(signal: CoinSignal) -> str:
     else:
         fr_note = "（偏高）"
 
-    # 老鼠倉警告
-    netflow_line = ""
-    if signal.netflow_warning:
-        netflow_line = "\n⚠️ <b>老鼠倉警告</b>：偵測到異常大額賣單，請注意風險！"
-
     # 備註清單
     notes_lines = ""
     if signal.notes:
         notes_text = "\n".join(f"  • {note}" for note in signal.notes)
         notes_lines = f"\n\n<b>💡 加分亮點：</b>\n{notes_text}"
 
-    binance_link = f"https://www.binance.com/zh-TC/trade/{signal.symbol}"
+    mexc_link = f"https://www.mexc.com/exchange/{signal.symbol}"
 
     message = f"""
 🚀 <b>小幣起飛訊號！</b> {score_emoji}
@@ -94,13 +89,12 @@ def format_signal_message(signal: CoinSignal) -> str:
 <b>現貨 CVD 趨勢：</b>{signal.cvd_trend} ✅
 <b>合約 OI 趨勢：</b>{signal.oi_trend} ✅
 <b>資金費率：</b>{signal.funding_rate*100:.4f}% {fr_note} ✅
-<b>大戶多空比：</b>{signal.top_trader_ls_ratio:.2f} ✅
-{netflow_line}
+<b>大戶多空比：</b>{f"{signal.top_trader_ls_ratio:.2f}" if signal.top_trader_ls_ratio is not None else "N/A"} ✅
 ━━━━━━ 🏆 綜合評分 ━━━━━━
 <b>{signal.score} / 100</b> {score_emoji}
 {notes_lines}
 
-🔗 <a href="{binance_link}">在 Binance 查看 {signal.symbol}</a>
+🔗 <a href="{mexc_link}">在 MEXC 查看 {signal.symbol}</a>
 
 ⚠️ <i>此訊號僅供參考，不構成投資建議。請自行做好風險管理。</i>
 """.strip()

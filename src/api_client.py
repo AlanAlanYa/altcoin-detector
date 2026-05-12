@@ -106,8 +106,8 @@ def _to_futures_symbol(symbol: str) -> str:
 # BinanceClient（實際打 MEXC 現貨，CoinGlass 籌碼）
 # =============================================
 class BinanceClient:
-    MEXC_SPOT_BASE = "https://api.mexc.com"
-    CG_BASE = "https://open-api-v4.coinglass.com/api/futures"
+    MEXC_SPOT_BASE = config.MEXC_SPOT_URL
+    CG_BASE = config.COINGLASS_BASE_URL
 
     def __init__(self):
         # 支援從 env 或 config 讀取，避免單一依賴失效
@@ -126,6 +126,11 @@ class BinanceClient:
     def get_exchange_info(self) -> Optional[Dict]:
         url = f"{self.MEXC_SPOT_BASE}/api/v3/exchangeInfo"
         return _safe_request("GET", url)
+    
+    def get_recent_trades(self, symbol: str, limit: int = 500) -> Optional[List]:
+        """取得最近成交紀錄，用於計算 CVD（CoinGlass 無數據時的 fallback）"""
+        url = f"{self.MEXC_SPOT_BASE}/api/v3/trades"
+        return _safe_request("GET", url, params={"symbol": symbol, "limit": limit})
 
     # --- 第二階段：改用 CoinGlass 全面接管籌碼數據 ---
 
@@ -138,9 +143,21 @@ class BinanceClient:
         return _safe_request("GET", f"{self.CG_BASE}/{endpoint}", params=params, headers=headers)
 
     def get_open_interest(self, symbol: str) -> Optional[List]:
-        """取得合約持倉量趨勢 (強制轉為數值，防止 detector 型別錯誤)"""
-        clean_symbol = symbol.replace("USDT", "")
-        data = self._cg_request("openInterest/ohlc", {"symbol": clean_symbol, "interval": "h1", "limit": 5})
+        data = self._cg_request(
+            "open-interest/history",
+            {"exchange": "Binance", "symbol": symbol, "interval": "h1", "limit": 5}
+        )
+
+        if data is None:
+            logger.info(f"[OI] {symbol} 無期貨持倉資料，跳過")
+            return None
+
+        if data.get("success"):
+            items = data.get("data", [])
+            if isinstance(items, list):
+                return [{"openInterest": _safe_float(item.get("c"))} for item in items]
+
+        return None
         
         if data and data.get("success"):
             items = data.get("data", [])
@@ -149,56 +166,39 @@ class BinanceClient:
         return None
 
     def get_cvd(self, symbol: str) -> Optional[List]:
-        """直接取得 CoinGlass CVD 趨勢"""
-        clean_symbol = symbol.replace("USDT", "")
-        data = self._cg_request("cvd/symbol", {"symbol": clean_symbol, "interval": "h1", "limit": 5})
-        
-        if data and data.get("success"):
-            # 確保回傳乾淨的原始列表
-            return data.get("data")
         return None
 
     def get_funding_rate(self, symbol: str) -> Optional[List]:
-        """
-        🔴 修復解析錯誤：取得資金費率。
-        優先尋找 Binance 數據，並確保 uMarginRate 一定是 float。
-        """
         clean_symbol = symbol.replace("USDT", "")
-        data = self._cg_request("fundingRate", {"symbol": clean_symbol})
-        
+        data = self._cg_request("funding-rate/exchange-list", {"symbol": clean_symbol})
+        logger.debug(f"[FR raw] {data}")
+
         if data and data.get("success"):
-            items = data.get("data", [])
+            items = data.get("data", {}).get("stablecoin_margin_list", [])
             if isinstance(items, list) and items:
-                # 優先抓取 Binance 的費率作為標準參考
-                target_item = next((item for item in items if item.get("exchange") == "Binance"), items[0])
-                rate = target_item.get("uMarginRate")
-                
+                target = next((i for i in items if i.get("exchange") == "Binance"), items[0])
+                rate = target.get("funding_rate")
                 if rate is not None:
-                    return [{"fundingRate": _safe_float(rate)}]
+                    return [{"fundingRate": float(rate)}]
         return None
 
     def get_top_trader_ls_ratio(self, symbol: str) -> Optional[List]:
-        """
-        🔴 修復解析錯誤：取得大戶多空比。
-        過濾異常數值，強制 float 型別轉換以利後續 detector 加分邏輯運算。
-        """
-        clean_symbol = symbol.replace("USDT", "")
         data = self._cg_request(
-            "top-long-short-account-ratio", 
-            {"symbol": clean_symbol, "exchange": "Binance", "interval": "h1"}
+            "top-long-short-account-ratio/history",
+            {"symbol": symbol, "exchange": "Binance", "interval": "h1"}
         )
+        logger.debug(f"[DEBUG raw] {data}")
         
         if data and data.get("success"):
             ratios = data.get("data", [])
             if isinstance(ratios, list):
                 result = []
                 for r in ratios:
-                    val = r.get("longShortRatio")
+                    val = r.get("top_account_long_short_ratio")
                     if val is not None:
-                        result.append({"ratio": _safe_float(val)})
+                        result.append({"ratio": float(val)})
                 return result if result else None
         return None
-
 
 # =============================================
 # CoinGecko API 封裝

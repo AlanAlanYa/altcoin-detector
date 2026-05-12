@@ -41,7 +41,7 @@ class Config:
     MIN_PRICE_CHANGE_24H: float = float(os.getenv("MIN_PRICE_CHANGE_24H", 5.0))
     MAX_PRICE_CHANGE_24H: float = float(os.getenv("MAX_PRICE_CHANGE_24H", 30.0))
 
-    VOL_SPIKE_THRESHOLD: float = float(os.getenv("VOL_SPIKE_THRESHOLD", 3.0))
+    VOL_SPIKE_THRESHOLD: float = float(os.getenv("VOL_SPIKE_THRESHOLD", 2.0))
 
     # ========================
     # PHASE 2（籌碼）
