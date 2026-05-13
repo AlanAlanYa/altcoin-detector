@@ -38,9 +38,8 @@ class Config:
     MIN_MARKET_CAP: float = float(os.getenv("MIN_MARKET_CAP", 15_000_000))
     MAX_MARKET_CAP: float = float(os.getenv("MAX_MARKET_CAP", 120_000_000))
 
-    MIN_PRICE_CHANGE_24H: float = float(os.getenv("MIN_PRICE_CHANGE_24H", 5.0))
-    MAX_PRICE_CHANGE_24H: float = float(os.getenv("MAX_PRICE_CHANGE_24H", 30.0))
-
+    MIN_PRICE_CHANGE_15M: float = float(os.getenv("MIN_PRICE_CHANGE_15M", 7.0))
+    
     VOL_SPIKE_THRESHOLD: float = float(os.getenv("VOL_SPIKE_THRESHOLD", 2.0))
 
     # ========================
@@ -48,6 +47,7 @@ class Config:
     # ========================
     MAX_FUNDING_RATE: float = float(os.getenv("MAX_FUNDING_RATE", 0.0005))
     MIN_TOP_TRADER_LS_RATIO: float = float(os.getenv("MIN_TOP_TRADER_LS_RATIO", 1.1))
+    CVD_DELTA_THRESHOLD: float = float(os.getenv("CVD_DELTA_THRESHOLD", 0.12))
 
     # （保留但目前未用，可未來擴充）
     MIN_RVOL: float = float(os.getenv("MIN_RVOL", 3.0))
@@ -57,7 +57,7 @@ class Config:
     # BTC 市場保護
     # ========================
     MAX_BTC_DAILY_DROP: float = float(os.getenv("MAX_BTC_DAILY_DROP", -3.0))
-    BTC_EMA_PERIOD: int = 50
+    BTC_EMA_PERIOD: int = 20
     BTC_SYMBOL: str = "BTCUSDT"
 
     # ========================
@@ -68,7 +68,7 @@ class Config:
     RETRY_DELAY_SEC: float = float(os.getenv("RETRY_DELAY_SEC", 5.0))
 
     # 🟡 修復死參數：支援從 .env 動態調整掃描間隔（預設 900 秒 / 15 分鐘）
-    SCAN_INTERVAL_SEC: int = int(os.getenv("SCAN_INTERVAL_SEC", 900))
+    SCAN_INTERVAL_SEC: int = int(os.getenv("SCAN_INTERVAL_SEC", 1800))
 
     # ========================
     # API ENDPOINTS
